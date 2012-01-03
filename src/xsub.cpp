@@ -52,7 +52,8 @@ void zmq::xsub_t::xattach_pipe (pipe_t *pipe_)
     dist.attach (pipe_);
 
     //  Send all the cached subscriptions to the new upstream peer.
-    subscriptions.apply (send_subscription, pipe_);
+    prefix_subscriptions.apply (send_subscription, pipe_, (void *)1);
+    exact_subscriptions.apply (send_subscription, pipe_, (void *)3);
     pipe_->flush ();
 }
 
@@ -75,7 +76,8 @@ void zmq::xsub_t::xterminated (pipe_t *pipe_)
 void zmq::xsub_t::xhiccuped (pipe_t *pipe_)
 {
     //  Send all the cached subscriptions to the hiccuped pipe.
-    subscriptions.apply (send_subscription, pipe_);
+    prefix_subscriptions.apply (send_subscription, pipe_, (void *)1);
+    exact_subscriptions.apply (send_subscription, pipe_, (void *)3);
     pipe_->flush ();
 }
 
@@ -85,20 +87,32 @@ int zmq::xsub_t::xsend (msg_t *msg_, int flags_)
     unsigned char *data = (unsigned char*) msg_->data ();
 
     // Malformed subscriptions.
-    if (size < 1 || (*data != 0 && *data != 1)) {
+    if (size < 1 || (*data != 0 && *data != 1 && *data != 2 && *data != 3)) {
         errno = EINVAL;
         return -1;
     }
 
     // Process the subscription.
     if (*data == 1) {
-        if (subscriptions.add (data + 1, size - 1))
+        if (prefix_subscriptions.add (data + 1, size - 1))
             return dist.send_to_all (msg_, flags_);
         else
             return 0;
     }
     else if (*data == 0) {
-        if (subscriptions.rm (data + 1, size - 1))
+        if (prefix_subscriptions.rm (data + 1, size - 1))
+            return dist.send_to_all (msg_, flags_);
+        else
+            return 0;
+    }
+    else if (*data == 3) {
+        if (exact_subscriptions.rm (data + 1, size - 1))
+            return dist.send_to_all (msg_, flags_);
+        else
+            return 0;
+    }
+    else if (*data == 2) {
+        if (exact_subscriptions.rm (data + 1, size - 1))
             return dist.send_to_all (msg_, flags_);
         else
             return 0;
@@ -197,20 +211,21 @@ bool zmq::xsub_t::xhas_in ()
 
 bool zmq::xsub_t::match (msg_t *msg_)
 {
-    return subscriptions.check ((unsigned char*) msg_->data (), msg_->size ());
+    return prefix_subscriptions.check ((unsigned char*) msg_->data (), msg_->size ()) ||
+        exact_subscriptions.check ((unsigned char*) msg_->data (), msg_->size ());
 }
 
 void zmq::xsub_t::send_subscription (unsigned char *data_, size_t size_,
-    void *arg_)
+    void *arg1_, void *arg2_)
 {
-    pipe_t *pipe = (pipe_t*) arg_;
+    pipe_t *pipe = (pipe_t*) arg1_;
 
     //  Create the subsctription message.
     msg_t msg;
     int rc = msg.init_size (size_ + 1);
     zmq_assert (rc == 0);
     unsigned char *data = (unsigned char*) msg.data ();
-    data [0] = 1;
+    data [0] = (size_t)arg2_;
     memcpy (data + 1, data_, size_);
 
     //  Send it to the pipe.

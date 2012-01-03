@@ -63,12 +63,17 @@ void zmq::xpub_t::xread_activated (pipe_t *pipe_)
         //  Apply the subscription to the trie.
         unsigned char *data = (unsigned char*) sub.data ();
         size_t size = sub.size ();
-        zmq_assert (size > 0 && (*data == 0 || *data == 1));
+        zmq_assert (
+            size > 0 && (*data == 0 || *data == 1 || *data == 2 || *data == 3));
         bool unique;
-		if (*data == 0)
-		    unique = subscriptions.rm (data + 1, size - 1, pipe_);
-		else
-		    unique = subscriptions.add (data + 1, size - 1, pipe_);
+        if (*data == 0)
+            unique = prefix_subscriptions.rm (data + 1, size - 1, pipe_);
+        else if (*data == 1)
+            unique = prefix_subscriptions.add (data + 1, size - 1, pipe_);
+        else if (*data == 2)
+            unique = exact_subscriptions.rm (data + 1, size - 1, pipe_);
+        else if (*data == 3)
+            unique = exact_subscriptions.add (data + 1, size - 1, pipe_);
 
         //  If the subscription is not a duplicate store it so that it can be
         //  passed to used on next recv call.
@@ -88,7 +93,8 @@ void zmq::xpub_t::xterminated (pipe_t *pipe_)
     //  Remove the pipe from the trie. If there are topics that nobody
     //  is interested in anymore, send corresponding unsubscriptions
     //  upstream.
-    subscriptions.rm (pipe_, send_unsubscription, this);
+    prefix_subscriptions.rm (pipe_, send_unsubscription, this, (void *)0);
+    exact_subscriptions.rm (pipe_, send_unsubscription, this, (void *)2);
 
     dist.terminated (pipe_);
 }
@@ -104,9 +110,12 @@ int zmq::xpub_t::xsend (msg_t *msg_, int flags_)
     bool msg_more = msg_->flags () & msg_t::more ? true : false;
 
     //  For the first part of multi-part message, find the matching pipes.
-    if (!more)
-        subscriptions.match ((unsigned char*) msg_->data (), msg_->size (),
+    if (!more) {
+        prefix_subscriptions.match ((unsigned char*) msg_->data (), msg_->size (), false,
             mark_as_matching, this);
+        exact_subscriptions.match ((unsigned char*) msg_->data (), msg_->size (), true,
+            mark_as_matching, this);
+    }
 
     //  Send the message to all the pipes that were marked as matching
     //  in the previous step.
@@ -153,17 +162,17 @@ bool zmq::xpub_t::xhas_in ()
 }
 
 void zmq::xpub_t::send_unsubscription (unsigned char *data_, size_t size_,
-    void *arg_)
+    void *arg1_, void *arg2_)
 {
-    xpub_t *self = (xpub_t*) arg_;
+    xpub_t *self = (xpub_t*) arg1_;
 
     if (self->options.type != ZMQ_PUB) {
 
 		//  Place the unsubscription to the queue of pending (un)sunscriptions
 		//  to be retrived by the user later on.
-		xpub_t *self = (xpub_t*) arg_;
+		xpub_t *self = (xpub_t*) arg1_;
 		blob_t unsub (size_ + 1, 0);
-		unsub [0] = 0;
+		unsub [0] = (size_t)arg2_;
 		memcpy (&unsub [1], data_, size_);
 		self->pending.push_back (unsub);
     }

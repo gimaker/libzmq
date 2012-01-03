@@ -50,14 +50,14 @@ namespace zmq
 
         //  Apply the function supplied to each subscription in the trie.
         void apply (void (*func_) (unsigned char *data_, size_t size_,
-            void *arg_), void *arg_);
+            void *arg1_, void *arg2_), void *arg1_, void *arg2_);
 
     private:
 
         void apply_helper (
             unsigned char **buff_, size_t buffsize_, size_t maxbuffsize_,
-            void (*func_) (unsigned char *data_, size_t size_, void *arg_),
-            void *arg_);
+            void (*func_) (unsigned char *data_, size_t size_,
+                void *arg1_, void *arg2_), void *arg1_, void *arg2_);
         bool is_redundant () const;
 
         uint32_t refcnt;

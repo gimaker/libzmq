@@ -143,22 +143,22 @@ bool zmq::mtrie_t::add_helper (unsigned char *prefix_, size_t size_,
 
 
 void zmq::mtrie_t::rm (pipe_t *pipe_,
-    void (*func_) (unsigned char *data_, size_t size_, void *arg_),
-    void *arg_)
+    void (*func_) (unsigned char *data_, size_t size_, void *arg1_, void *arg2_),
+    void *arg1_, void *arg2_)
 {
     unsigned char *buff = NULL;
-    rm_helper (pipe_, &buff, 0, 0, func_, arg_);
+    rm_helper (pipe_, &buff, 0, 0, func_, arg1_, arg2_);
     free (buff);
 }
 
 void zmq::mtrie_t::rm_helper (pipe_t *pipe_, unsigned char **buff_,
     size_t buffsize_, size_t maxbuffsize_,
-    void (*func_) (unsigned char *data_, size_t size_, void *arg_),
-    void *arg_)
+    void (*func_) (unsigned char *data_, size_t size_, void *arg1_, void *arg2_),
+    void *arg1_, void *arg2_)
 {
     //  Remove the subscription from this node.
     if (pipes && pipes->erase (pipe_) && pipes->empty ()) {
-        func_ (*buff_, buffsize_, arg_);
+        func_ (*buff_, buffsize_, arg1_, arg2_);
         delete pipes;
         pipes = 0;
     }
@@ -179,7 +179,7 @@ void zmq::mtrie_t::rm_helper (pipe_t *pipe_, unsigned char **buff_,
         (*buff_) [buffsize_] = min;
         buffsize_++;
         next.node->rm_helper (pipe_, buff_, buffsize_, maxbuffsize_,
-            func_, arg_);
+            func_, arg1_, arg2_);
         if (next.node->is_redundant ()) {
             delete next.node;
             next.node = 0;
@@ -193,7 +193,7 @@ void zmq::mtrie_t::rm_helper (pipe_t *pipe_, unsigned char **buff_,
         (*buff_) [buffsize_] = min + c;
         if (next.table [c])
             next.table [c]->rm_helper (pipe_, buff_, buffsize_ + 1,
-                maxbuffsize_, func_, arg_);
+                maxbuffsize_, func_, arg1_, arg2_);
         if (next.table [c]->is_redundant ()) {
             delete next.table [c];
             next.table [c] = 0;
@@ -246,14 +246,14 @@ bool zmq::mtrie_t::rm_helper (unsigned char *prefix_, size_t size_,
     return ret;
 }
 
-void zmq::mtrie_t::match (unsigned char *data_, size_t size_,
+void zmq::mtrie_t::match (unsigned char *data_, size_t size_, bool exact_,
     void (*func_) (pipe_t *pipe_, void *arg_), void *arg_)
 {
     mtrie_t *current = this;
     while (true) {
 
         //  Signal the pipes attached to this node.
-        if (current->pipes) {
+        if (current->pipes && (!exact_ || !size_)) {
             for (pipes_t::iterator it = current->pipes->begin ();
                   it != current->pipes->end (); ++it)
                 func_ (*it, arg_);

@@ -39,7 +39,8 @@ zmq::sub_t::~sub_t ()
 int zmq::sub_t::xsetsockopt (int option_, const void *optval_,
     size_t optvallen_)
 {
-    if (option_ != ZMQ_SUBSCRIBE && option_ != ZMQ_UNSUBSCRIBE) {
+    if (option_ != ZMQ_SUBSCRIBE && option_ != ZMQ_UNSUBSCRIBE &&
+        option_ != ZMQ_SUBSCRIBE_EXACT && option_ != ZMQ_UNSUBSCRIBE_EXACT) {
         errno = EINVAL;
         return -1;
     }
@@ -53,6 +54,10 @@ int zmq::sub_t::xsetsockopt (int option_, const void *optval_,
         *data = 1;
     else if (option_ == ZMQ_UNSUBSCRIBE)
         *data = 0;
+    else if (option_ == ZMQ_SUBSCRIBE_EXACT)
+        *data = 3;
+    else if (option_ == ZMQ_UNSUBSCRIBE_EXACT)
+        *data = 2;
     memcpy (data + 1, optval_, optvallen_);
 
     //  Pass it further on in the stack.

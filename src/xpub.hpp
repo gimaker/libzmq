@@ -61,13 +61,14 @@ namespace zmq
         //  Function to be applied to the trie to send all the subsciptions
         //  upstream.
         static void send_unsubscription (unsigned char *data_, size_t size_,
-            void *arg_);
+            void *arg1_, void *arg2_);
 
         //  Function to be applied to each matching pipes.
         static void mark_as_matching (zmq::pipe_t *pipe_, void *arg_);
 
         //  List of all subscriptions mapped to corresponding pipes.
-        mtrie_t subscriptions;
+        mtrie_t prefix_subscriptions;
+        mtrie_t exact_subscriptions;
 
         //  Distributor of messages holding the list of outbound pipes.
         dist_t dist;

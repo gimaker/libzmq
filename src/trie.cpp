@@ -199,20 +199,21 @@ bool zmq::trie_t::check (unsigned char *data_, size_t size_)
 }
 
 void zmq::trie_t::apply (void (*func_) (unsigned char *data_, size_t size_,
-    void *arg_), void *arg_)
+    void *arg1_, void *arg2_), void *arg1_, void *arg2_)
 {
     unsigned char *buff = NULL;
-    apply_helper (&buff, 0, 0, func_, arg_);
+    apply_helper (&buff, 0, 0, func_, arg1_, arg2_);
     free (buff);
 }
 
 void zmq::trie_t::apply_helper (
     unsigned char **buff_, size_t buffsize_, size_t maxbuffsize_,
-    void (*func_) (unsigned char *data_, size_t size_, void *arg_), void *arg_)
+    void (*func_) (unsigned char *data_, size_t size_, void *arg1_, void *arg2_),
+    void *arg1_, void *arg2_)
 {
     //  If this node is a subscription, apply the function.
     if (refcnt)
-        func_ (*buff_, buffsize_, arg_);
+        func_ (*buff_, buffsize_, arg1_, arg2_);
 
     //  Adjust the buffer.
     if (buffsize_ >= maxbuffsize_) {
@@ -229,7 +230,8 @@ void zmq::trie_t::apply_helper (
     if (count == 1) {
         (*buff_) [buffsize_] = min;
         buffsize_++;
-        next.node->apply_helper (buff_, buffsize_, maxbuffsize_, func_, arg_);
+        next.node->apply_helper (
+            buff_, buffsize_, maxbuffsize_, func_, arg1_, arg2_);
         return;
     }
 
@@ -237,8 +239,8 @@ void zmq::trie_t::apply_helper (
     for (unsigned short c = 0; c != count; c++) {
         (*buff_) [buffsize_] = min + c;
         if (next.table [c])
-            next.table [c]->apply_helper (buff_, buffsize_ + 1, maxbuffsize_,
-                func_, arg_);
+            next.table [c]->apply_helper (
+                buff_, buffsize_ + 1, maxbuffsize_, func_, arg1_, arg2_);
     }
 }
 

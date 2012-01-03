@@ -63,7 +63,7 @@ namespace zmq
         //  Function to be applied to the trie to send all the subsciptions
         //  upstream.
         static void send_subscription (unsigned char *data_, size_t size_,
-            void *arg_);
+            void *arg1_, void *arg2_);
 
         //  Fair queueing object for inbound pipes.
         fq_t fq;
@@ -72,7 +72,8 @@ namespace zmq
         dist_t dist;
 
         //  The repository of subscriptions.
-        trie_t subscriptions;
+        trie_t prefix_subscriptions;
+        trie_t exact_subscriptions;
 
         //  If true, 'message' contains a matching message to return on the
         //  next recv call.

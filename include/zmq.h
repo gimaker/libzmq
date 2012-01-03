@@ -173,7 +173,9 @@ ZMQ_EXPORT int zmq_term (void *context);
 #define ZMQ_AFFINITY 4
 #define ZMQ_IDENTITY 5
 #define ZMQ_SUBSCRIBE 6
+#define ZMQ_SUBSCRIBE_PREFIX 6
 #define ZMQ_UNSUBSCRIBE 7
+#define ZMQ_UNSUBSCRIBE_PREFIX 7
 #define ZMQ_RATE 8
 #define ZMQ_RECOVERY_IVL 9
 #define ZMQ_SNDBUF 11
@@ -193,6 +195,8 @@ ZMQ_EXPORT int zmq_term (void *context);
 #define ZMQ_RCVTIMEO 27
 #define ZMQ_SNDTIMEO 28
 #define ZMQ_IPV4ONLY 31
+#define ZMQ_SUBSCRIBE_EXACT 32
+#define ZMQ_UNSUBSCRIBE_EXACT 33
 
 /*  Message options                                                           */
 #define ZMQ_MORE 1

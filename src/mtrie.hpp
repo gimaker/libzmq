@@ -49,15 +49,15 @@ namespace zmq
         //  If there are no subscriptions left on some topics, invoke the
         //  supplied callback function.
         void rm (zmq::pipe_t *pipe_,
-            void (*func_) (unsigned char *data_, size_t size_, void *arg_),
-            void *arg_);
+            void (*func_) (unsigned char *data_, size_t size_,
+                void *arg1_, void *arg2_), void *arg1_, void *arg2_);
 
         //  Remove specific subscription from the trie. Return true is it was
         //  actually removed rather than de-duplicated.
         bool rm (unsigned char *prefix_, size_t size_, zmq::pipe_t *pipe_);
 
         //  Signal all the matching pipes.
-        void match (unsigned char *data_, size_t size_,
+        void match (unsigned char *data_, size_t size_, bool exact_,
             void (*func_) (zmq::pipe_t *pipe_, void *arg_), void *arg_);
 
     private:
@@ -66,8 +66,8 @@ namespace zmq
             zmq::pipe_t *pipe_);
         void rm_helper (zmq::pipe_t *pipe_, unsigned char **buff_,
             size_t buffsize_, size_t maxbuffsize_,
-            void (*func_) (unsigned char *data_, size_t size_, void *arg_),
-            void *arg_);
+            void (*func_) (unsigned char *data_, size_t size_, void *arg1_, void *arg2_),
+            void *arg1_, void *arg2_);
         bool rm_helper (unsigned char *prefix_, size_t size_,
             zmq::pipe_t *pipe_);
         bool is_redundant () const;
