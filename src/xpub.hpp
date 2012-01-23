@@ -26,9 +26,9 @@
 
 #include "socket_base.hpp"
 #include "session_base.hpp"
-#include "mtrie.hpp"
 #include "array.hpp"
 #include "dist.hpp"
+#include "stdint.hpp"
 
 namespace zmq
 {
@@ -37,6 +37,7 @@ namespace zmq
     class msg_t;
     class pipe_t;
     class io_thread_t;
+    class xpub_filter_t;
 
     class xpub_t :
         public socket_base_t
@@ -60,14 +61,17 @@ namespace zmq
 
         //  Function to be applied to the trie to send all the subsciptions
         //  upstream.
-        static void send_unsubscription (unsigned char *data_, size_t size_,
-            void *arg_);
+        static void send_unsubscription (
+            const unsigned char *data_, size_t size_,
+            uint16_t method_id, void *arg_);
 
         //  Function to be applied to each matching pipes.
         static void mark_as_matching (zmq::pipe_t *pipe_, void *arg_);
 
-        //  List of all subscriptions mapped to corresponding pipes.
-        mtrie_t subscriptions;
+        static xpub_filter_t *create_filter (uint16_t method_id);
+
+        typedef std::map <uint16_t, xpub_filter_t *> filters_t;
+        filters_t filters;
 
         //  Distributor of messages holding the list of outbound pipes.
         dist_t dist;

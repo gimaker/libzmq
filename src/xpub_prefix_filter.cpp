@@ -1,6 +1,7 @@
 /*
     Copyright (c) 2011 250bpm s.r.o.
-    Copyright (c) 2011 Other contributors as noted in the AUTHORS file
+    Copyright (c) 2012 Spotify AB
+    Copyright (c) 2011-2012 Other contributors as noted in the AUTHORS file
 
     This file is part of 0MQ.
 
@@ -30,15 +31,15 @@
 
 #include "err.hpp"
 #include "pipe.hpp"
-#include "mtrie.hpp"
+#include "xpub_prefix_filter.hpp"
 
-zmq::mtrie_t::mtrie_t () :
+zmq::xpub_prefix_filter_t::xpub_prefix_filter_t () :
     min (0),
     count (0)
 {
 }
 
-zmq::mtrie_t::~mtrie_t ()
+zmq::xpub_prefix_filter_t::~xpub_prefix_filter_t ()
 {
     if (count == 1)
         delete next.node;
@@ -50,13 +51,14 @@ zmq::mtrie_t::~mtrie_t ()
     }
 }
 
-bool zmq::mtrie_t::add (unsigned char *prefix_, size_t size_, pipe_t *pipe_)
+bool zmq::xpub_prefix_filter_t::add_rule (
+    const unsigned char *prefix_, size_t size_, pipe_t *pipe_)
 {
     return add_helper (prefix_, size_, pipe_);
 }
 
-bool zmq::mtrie_t::add_helper (unsigned char *prefix_, size_t size_,
-    pipe_t *pipe_)
+bool zmq::xpub_prefix_filter_t::add_helper (
+    const unsigned char *prefix_, size_t size_, pipe_t *pipe_)
 {
     //  We are at the node corresponding to the prefix. We are done.
     if (!size_) {
@@ -77,10 +79,10 @@ bool zmq::mtrie_t::add_helper (unsigned char *prefix_, size_t size_,
         }
         else if (count == 1) {
             unsigned char oldc = min;
-            mtrie_t *oldp = next.node;
+            xpub_prefix_filter_t *oldp = next.node;
             count = (min < c ? c - min : min - c) + 1;
-            next.table = (mtrie_t**)
-                malloc (sizeof (mtrie_t*) * count);
+            next.table = (xpub_prefix_filter_t**)
+                malloc (sizeof (xpub_prefix_filter_t*) * count);
             zmq_assert (next.table);
             for (unsigned short i = 0; i != count; ++i)
                 next.table [i] = 0;
@@ -92,8 +94,8 @@ bool zmq::mtrie_t::add_helper (unsigned char *prefix_, size_t size_,
             //  The new character is above the current character range.
             unsigned short old_count = count;
             count = c - min + 1;
-            next.table = (mtrie_t**) realloc ((void*) next.table,
-                sizeof (mtrie_t*) * count);
+            next.table = (xpub_prefix_filter_t**) realloc ((void*) next.table,
+                sizeof (xpub_prefix_filter_t*) * count);
             zmq_assert (next.table);
             for (unsigned short i = old_count; i != count; i++)
                 next.table [i] = NULL;
@@ -103,11 +105,11 @@ bool zmq::mtrie_t::add_helper (unsigned char *prefix_, size_t size_,
             //  The new character is below the current character range.
             unsigned short old_count = count;
             count = (min + old_count) - c;
-            next.table = (mtrie_t**) realloc ((void*) next.table,
-                sizeof (mtrie_t*) * count);
+            next.table = (xpub_prefix_filter_t**) realloc ((void*) next.table,
+                sizeof (xpub_prefix_filter_t*) * count);
             zmq_assert (next.table);
             memmove (next.table + min - c, next.table,
-                old_count * sizeof (mtrie_t*));
+                old_count * sizeof (xpub_prefix_filter_t*));
             for (unsigned short i = 0; i != min - c; i++)
                 next.table [i] = NULL;
             min = c;
@@ -117,14 +119,14 @@ bool zmq::mtrie_t::add_helper (unsigned char *prefix_, size_t size_,
     //  If next node does not exist, create one.
     if (count == 1) {
         if (!next.node) {
-            next.node = new (std::nothrow) mtrie_t;
+            next.node = new (std::nothrow) xpub_prefix_filter_t;
             zmq_assert (next.node);
         }
         return next.node->add_helper (prefix_ + 1, size_ - 1, pipe_);
     }
     else {
         if (!next.table [c - min]) {
-            next.table [c - min] = new (std::nothrow) mtrie_t;
+            next.table [c - min] = new (std::nothrow) xpub_prefix_filter_t;
             zmq_assert (next.table [c - min]);
         }
         return next.table [c - min]->add_helper (prefix_ + 1, size_ - 1, pipe_);
@@ -132,8 +134,10 @@ bool zmq::mtrie_t::add_helper (unsigned char *prefix_, size_t size_,
 }
 
 
-void zmq::mtrie_t::rm (pipe_t *pipe_,
-    void (*func_) (unsigned char *data_, size_t size_, void *arg_),
+void zmq::xpub_prefix_filter_t::remove_pipe (pipe_t *pipe_,
+    void (*func_) (
+        const unsigned char *data_, size_t size_,
+        uint16_t method_id_, void *arg_),
     void *arg_)
 {
     unsigned char *buff = NULL;
@@ -141,14 +145,16 @@ void zmq::mtrie_t::rm (pipe_t *pipe_,
     free (buff);
 }
 
-void zmq::mtrie_t::rm_helper (pipe_t *pipe_, unsigned char **buff_,
+void zmq::xpub_prefix_filter_t::rm_helper (pipe_t *pipe_, unsigned char **buff_,
     size_t buffsize_, size_t maxbuffsize_,
-    void (*func_) (unsigned char *data_, size_t size_, void *arg_),
+    void (*func_) (
+        const unsigned char *data_, size_t size_,
+        uint16_t method_id_, void *arg_),
     void *arg_)
 {
     //  Remove the subscription from this node.
     if (pipes.erase (pipe_) && pipes.empty ())
-        func_ (*buff_, buffsize_, arg_);
+        func_ (*buff_, buffsize_, ZMQ_FILTER_PREFIX, arg_);
 
     //  Adjust the buffer.
     if (buffsize_ >= maxbuffsize_) {
@@ -179,13 +185,14 @@ void zmq::mtrie_t::rm_helper (pipe_t *pipe_, unsigned char **buff_,
     }  
 }
 
-bool zmq::mtrie_t::rm (unsigned char *prefix_, size_t size_, pipe_t *pipe_)
+bool zmq::xpub_prefix_filter_t::remove_rule (
+    const unsigned char *prefix_, size_t size_, pipe_t *pipe_)
 {
     return rm_helper (prefix_, size_, pipe_);
 }
 
-bool zmq::mtrie_t::rm_helper (unsigned char *prefix_, size_t size_,
-    pipe_t *pipe_)
+bool zmq::xpub_prefix_filter_t::rm_helper (
+    const unsigned char *prefix_, size_t size_, pipe_t *pipe_)
 {
     if (!size_) {
         pipes_t::size_type erased = pipes.erase (pipe_);
@@ -197,7 +204,7 @@ bool zmq::mtrie_t::rm_helper (unsigned char *prefix_, size_t size_,
     if (!count || c < min || c >= min + count)
         return false;
 
-    mtrie_t *next_node =
+    xpub_prefix_filter_t *next_node =
         count == 1 ? next.node : next.table [c - min];
 
     if (!next_node)
@@ -206,10 +213,10 @@ bool zmq::mtrie_t::rm_helper (unsigned char *prefix_, size_t size_,
     return next_node->rm_helper (prefix_ + 1, size_ - 1, pipe_);
 }
 
-void zmq::mtrie_t::match (unsigned char *data_, size_t size_,
+void zmq::xpub_prefix_filter_t::match (const unsigned char *data_, size_t size_,
     void (*func_) (pipe_t *pipe_, void *arg_), void *arg_)
 {
-    mtrie_t *current = this;
+    xpub_prefix_filter_t *current = this;
     while (true) {
 
         //  Signal the pipes attached to this node.

@@ -49,6 +49,9 @@ namespace zmq
 
         sub_t (const sub_t&);
         const sub_t &operator = (const sub_t&);
+
+        //  TODO: document
+        uint16_t filter_method;
     };
 
     class sub_session_t : public xsub_session_t

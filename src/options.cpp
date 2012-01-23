@@ -213,7 +213,6 @@ int zmq::options_t::setsockopt (int option_, const void *optval_,
             ipv4only = val;
             return 0;
         }
-
     }
 
     errno = EINVAL;
@@ -385,7 +384,6 @@ int zmq::options_t::getsockopt (int option_, void *optval_, size_t *optvallen_)
         *((int*) optval_) = ipv4only;
         *optvallen_ = sizeof (int);
         return 0;
-
     }
 
     errno = EINVAL;

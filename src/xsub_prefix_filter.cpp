@@ -1,4 +1,5 @@
 /*
+    Copyright (c) 2012 Spotify AB
     Copyright (c) 2009-2011 250bpm s.r.o.
     Copyright (c) 2007-2009 iMatix Corporation
     Copyright (c) 2007-2011 Other contributors as noted in the AUTHORS file
@@ -30,16 +31,16 @@
 #endif
 
 #include "err.hpp"
-#include "trie.hpp"
+#include "xsub_prefix_filter.hpp"
 
-zmq::trie_t::trie_t () :
+zmq::xsub_prefix_filter_t::xsub_prefix_filter_t () :
     refcnt (0),
     min (0),
     count (0)
 {
 }
 
-zmq::trie_t::~trie_t ()
+zmq::xsub_prefix_filter_t::~xsub_prefix_filter_t ()
 {
     if (count == 1)
         delete next.node;
@@ -51,7 +52,8 @@ zmq::trie_t::~trie_t ()
     }
 }
 
-bool zmq::trie_t::add (unsigned char *prefix_, size_t size_)
+bool zmq::xsub_prefix_filter_t::add_rule (
+    const unsigned char *prefix_, size_t size_)
 {
     //  We are at the node corresponding to the prefix. We are done.
     if (!size_) {
@@ -71,10 +73,10 @@ bool zmq::trie_t::add (unsigned char *prefix_, size_t size_)
         }
         else if (count == 1) {
             unsigned char oldc = min;
-            trie_t *oldp = next.node;
+            xsub_prefix_filter_t *oldp = next.node;
             count = (min < c ? c - min : min - c) + 1;
-            next.table = (trie_t**)
-                malloc (sizeof (trie_t*) * count);
+            next.table = (xsub_prefix_filter_t**)
+                malloc (sizeof (xsub_prefix_filter_t*) * count);
             zmq_assert (next.table);
             for (unsigned short i = 0; i != count; ++i)
                 next.table [i] = 0;
@@ -86,8 +88,8 @@ bool zmq::trie_t::add (unsigned char *prefix_, size_t size_)
             //  The new character is above the current character range.
             unsigned short old_count = count;
             count = c - min + 1;
-            next.table = (trie_t**) realloc ((void*) next.table,
-                sizeof (trie_t*) * count);
+            next.table = (xsub_prefix_filter_t**) realloc ((void*) next.table,
+                sizeof (xsub_prefix_filter_t*) * count);
             zmq_assert (next.table);
             for (unsigned short i = old_count; i != count; i++)
                 next.table [i] = NULL;
@@ -97,11 +99,11 @@ bool zmq::trie_t::add (unsigned char *prefix_, size_t size_)
             //  The new character is below the current character range.
             unsigned short old_count = count;
             count = (min + old_count) - c;
-            next.table = (trie_t**) realloc ((void*) next.table,
-                sizeof (trie_t*) * count);
+            next.table = (xsub_prefix_filter_t**) realloc ((void*) next.table,
+                sizeof (xsub_prefix_filter_t*) * count);
             zmq_assert (next.table);
             memmove (next.table + min - c, next.table,
-                old_count * sizeof (trie_t*));
+                old_count * sizeof (xsub_prefix_filter_t*));
             for (unsigned short i = 0; i != min - c; i++)
                 next.table [i] = NULL;
             min = c;
@@ -111,21 +113,22 @@ bool zmq::trie_t::add (unsigned char *prefix_, size_t size_)
     //  If next node does not exist, create one.
     if (count == 1) {
         if (!next.node) {
-            next.node = new (std::nothrow) trie_t;
+            next.node = new (std::nothrow) xsub_prefix_filter_t;
             zmq_assert (next.node);
         }
-        return next.node->add (prefix_ + 1, size_ - 1);
+        return next.node->add_rule (prefix_ + 1, size_ - 1);
     }
     else {
         if (!next.table [c - min]) {
-            next.table [c - min] = new (std::nothrow) trie_t;
+            next.table [c - min] = new (std::nothrow) xsub_prefix_filter_t;
             zmq_assert (next.table [c - min]);
         }
-        return next.table [c - min]->add (prefix_ + 1, size_ - 1);
+        return next.table [c - min]->add_rule (prefix_ + 1, size_ - 1);
     }
 }
 
-bool zmq::trie_t::rm (unsigned char *prefix_, size_t size_)
+bool zmq::xsub_prefix_filter_t::remove_rule (
+    const unsigned char *prefix_, size_t size_)
 {
      //  TODO: Shouldn't an error be reported if the key does not exist?
 
@@ -140,20 +143,21 @@ bool zmq::trie_t::rm (unsigned char *prefix_, size_t size_)
      if (!count || c < min || c >= min + count)
          return false;
 
-     trie_t *next_node =
+     xsub_prefix_filter_t *next_node =
          count == 1 ? next.node : next.table [c - min];
 
      if (!next_node)
          return false;
 
-     return next_node->rm (prefix_ + 1, size_ - 1);
+     return next_node->remove_rule (prefix_ + 1, size_ - 1);
 }
 
-bool zmq::trie_t::check (unsigned char *data_, size_t size_)
+bool zmq::xsub_prefix_filter_t::match (
+    const unsigned char *data_, size_t size_)
 {
     //  This function is on critical path. It deliberately doesn't use
     //  recursion to get a bit better performance.
-    trie_t *current = this;
+    xsub_prefix_filter_t *current = this;
     while (true) {
 
         //  We've found a corresponding subscription!
@@ -183,21 +187,27 @@ bool zmq::trie_t::check (unsigned char *data_, size_t size_)
     }
 }
 
-void zmq::trie_t::apply (void (*func_) (unsigned char *data_, size_t size_,
-    void *arg_), void *arg_)
+void zmq::xsub_prefix_filter_t::apply (
+    void (*func_) (
+        const unsigned char *data_, size_t size_,
+        uint16_t method_id_, void *arg_),
+    void *arg_)
 {
     unsigned char *buff = NULL;
     apply_helper (&buff, 0, 0, func_, arg_);
     free (buff);
 }
 
-void zmq::trie_t::apply_helper (
+void zmq::xsub_prefix_filter_t::apply_helper (
     unsigned char **buff_, size_t buffsize_, size_t maxbuffsize_,
-    void (*func_) (unsigned char *data_, size_t size_, void *arg_), void *arg_)
+    void (*func_) (
+        const unsigned char *data_, size_t size_,
+        uint16_t method_id_, void *arg_),
+    void *arg_)
 {
     //  If this node is a subscription, apply the function.
     if (refcnt)
-        func_ (*buff_, buffsize_, arg_);
+        func_ (*buff_, buffsize_, ZMQ_FILTER_PREFIX, arg_);
 
     //  Adjust the buffer.
     if (buffsize_ >= maxbuffsize_) {
@@ -206,7 +216,7 @@ void zmq::trie_t::apply_helper (
         zmq_assert (*buff_);
     }
 
-    //  If there are no subnodes in the trie, return.
+    //  If there are no subnodes in the xsub_prefix_filter, return.
     if (count == 0)
         return;
 

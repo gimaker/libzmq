@@ -1,4 +1,5 @@
 /*
+    Copyright (c) 2012 Spotify AB
     Copyright (c) 2009-2011 250bpm s.r.o.
     Copyright (c) 2007-2009 iMatix Corporation
     Copyright (c) 2007-2011 Other contributors as noted in the AUTHORS file
@@ -23,7 +24,8 @@
 #include "msg.hpp"
 
 zmq::sub_t::sub_t (class ctx_t *parent_, uint32_t tid_) :
-    xsub_t (parent_, tid_)
+    xsub_t (parent_, tid_),
+    filter_method (ZMQ_FILTER_PREFIX)
 {
     options.type = ZMQ_SUB;
 
@@ -39,32 +41,47 @@ zmq::sub_t::~sub_t ()
 int zmq::sub_t::xsetsockopt (int option_, const void *optval_,
     size_t optvallen_)
 {
-    if (option_ != ZMQ_SUBSCRIBE && option_ != ZMQ_UNSUBSCRIBE) {
+    if (option_ == ZMQ_FILTER) {
+        if (optvallen_ != sizeof (int)) {
+            errno = EINVAL;
+            return -1;
+        }
+        int method = *((const int *)optval_);
+        if (method != ZMQ_FILTER_PREFIX && method != ZMQ_FILTER_EXACT) {
+            errno = EINVAL;
+            return -1;
+        }
+        filter_method = method;
+        return 0;
+    }
+    else if (option_ == ZMQ_SUBSCRIBE || option_ == ZMQ_UNSUBSCRIBE) {
+        //  Create the subscription message.
+        msg_t msg;
+        int rc = msg.init_size (optvallen_ + 4);
+        errno_assert (rc == 0);
+        unsigned char *data = (unsigned char*) msg.data ();
+        uint16_t cmd_id = option_ == ZMQ_SUBSCRIBE ? 1 : 0;
+        data [0] = cmd_id >> 8;
+        data [1] = cmd_id & 0xFF;
+        data [2] = filter_method >> 8;
+        data [3] = filter_method & 0xFF;
+        memcpy (data + 4, optval_, optvallen_);
+
+        //  Pass it further on in the stack.
+        int err = 0;
+        rc = xsub_t::xsend (&msg, 0);
+        if (rc != 0)
+            err = errno;
+        int rc2 = msg.close ();
+        errno_assert (rc2 == 0);
+        if (rc != 0)
+            errno = err;
+        return rc;
+    }
+    else {
         errno = EINVAL;
         return -1;
     }
-
-    //  Create the subscription message.
-    msg_t msg;
-    int rc = msg.init_size (optvallen_ + 1);
-    errno_assert (rc == 0);
-    unsigned char *data = (unsigned char*) msg.data ();
-    if (option_ == ZMQ_SUBSCRIBE)
-        *data = 1;
-    else if (option_ == ZMQ_UNSUBSCRIBE)
-        *data = 0;
-    memcpy (data + 1, optval_, optvallen_);
-
-    //  Pass it further on in the stack.
-    int err = 0;
-    rc = xsub_t::xsend (&msg, 0);
-    if (rc != 0)
-        err = errno;
-    int rc2 = msg.close ();
-    errno_assert (rc2 == 0);
-    if (rc != 0)
-        errno = err;
-    return rc;
 }
 
 int zmq::sub_t::xsend (msg_t *msg_, int flags_)

@@ -35,7 +35,6 @@ libzmq_la_SOURCES = \
     likely.hpp \
     mailbox.hpp \
     msg.hpp \
-    mtrie.hpp \
     mutex.hpp \
     object.hpp \
     options.hpp \
@@ -67,13 +66,18 @@ libzmq_la_SOURCES = \
     tcp_connecter.hpp \
     tcp_listener.hpp \
     thread.hpp \
-    trie.hpp \
     windows.hpp \
     wire.hpp \
     xpub.hpp \
+    xpub_exact_filter.hpp \
+    xpub_filter.hpp \
+    xpub_prefix_filter.hpp \
     xrep.hpp \
     xreq.hpp \
     xsub.hpp \
+    xsub_exact_filter.hpp \
+    xsub_filter.hpp \
+    xsub_prefix_filter.hpp \
     ypipe.hpp \
     yqueue.hpp \
     clock.cpp \
@@ -95,7 +99,6 @@ libzmq_la_SOURCES = \
     lb.cpp \
     mailbox.cpp \
     msg.cpp \
-    mtrie.cpp \
     object.cpp \
     options.cpp \
     own.cpp \
@@ -123,11 +126,16 @@ libzmq_la_SOURCES = \
     tcp_connecter.cpp \
     tcp_listener.cpp \
     thread.cpp \
-    trie.cpp \
     xpub.cpp \
+    xpub_exact_filter.cpp \
+    xpub_filter.cpp \
+    xpub_prefix_filter.cpp \
     xrep.cpp \
     xreq.cpp \
     xsub.cpp \
+    xsub_exact_filter.cpp \
+    xsub_filter.cpp \
+    xsub_prefix_filter.cpp \
     zmq.cpp \
     zmq_utils.cpp
 

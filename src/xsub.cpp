@@ -1,4 +1,5 @@
 /*
+    Copyright (c) 2012 Spotify AB
     Copyright (c) 2010-2011 250bpm s.r.o.
     Copyright (c) 2011 VMware, Inc.
     Copyright (c) 2010-2011 Other contributors as noted in the AUTHORS file
@@ -23,6 +24,9 @@
 
 #include "xsub.hpp"
 #include "err.hpp"
+#include "xsub_filter.hpp"
+#include "xsub_prefix_filter.hpp"
+#include "xsub_exact_filter.hpp"
 
 zmq::xsub_t::xsub_t (class ctx_t *parent_, uint32_t tid_) :
     socket_base_t (parent_, tid_),
@@ -43,6 +47,11 @@ zmq::xsub_t::~xsub_t ()
 {
     int rc = message.close ();
     errno_assert (rc == 0);
+
+    for (filters_t::iterator it = filters.begin ();
+         it != filters.end (); ++it) {
+        delete it->second;
+    }
 }
 
 void zmq::xsub_t::xattach_pipe (pipe_t *pipe_)
@@ -52,7 +61,11 @@ void zmq::xsub_t::xattach_pipe (pipe_t *pipe_)
     dist.attach (pipe_);
 
     //  Send all the cached subscriptions to the new upstream peer.
-    subscriptions.apply (send_subscription, pipe_);
+    for (filters_t::iterator it = filters.begin ();
+         it != filters.end (); ++it) {
+        it->second->apply (send_subscription, pipe_);
+    }
+
     pipe_->flush ();
 }
 
@@ -75,7 +88,10 @@ void zmq::xsub_t::xterminated (pipe_t *pipe_)
 void zmq::xsub_t::xhiccuped (pipe_t *pipe_)
 {
     //  Send all the cached subscriptions to the hiccuped pipe.
-    subscriptions.apply (send_subscription, pipe_);
+    for (filters_t::iterator it = filters.begin ();
+         it != filters.end (); ++it) {
+        it->second->apply (send_subscription, pipe_);
+    }
     pipe_->flush ();
 }
 
@@ -85,27 +101,40 @@ int zmq::xsub_t::xsend (msg_t *msg_, int flags_)
     unsigned char *data = (unsigned char*) msg_->data ();
 
     // Malformed subscriptions.
-    if (size < 1 || (*data != 0 && *data != 1)) {
+    if (size < 4) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    uint16_t cmd_id = data [0] << 8 | data [1];
+    uint16_t method_id = data [2] << 8 | data [3];
+
+    // Malformed command id
+    if (size < 1 || (cmd_id != 0 && cmd_id != 1)) {
         errno = EINVAL;
         return -1;
     }
 
     // Process the subscription.
-    if (*data == 1) {
-        if (subscriptions.add (data + 1, size - 1))
-            return dist.send_to_all (msg_, flags_);
-        else
-            return 0;
-    }
-    else if (*data == 0) {
-        if (subscriptions.rm (data + 1, size - 1))
-            return dist.send_to_all (msg_, flags_);
-        else
-            return 0;
+    xsub_filter_t *filter = 0;
+    filters_t::iterator it = filters.find (method_id);
+    if (it == filters.end ()) {
+        filter = create_filter (method_id);
+        zmq_assert (filter);
+        filters.insert (std::make_pair (method_id, filter));
+    } else {
+        filter = it->second;
     }
 
-    zmq_assert (false);
-    return -1;
+    bool unique;
+    if (cmd_id == 1)
+        unique = filter->add_rule (data + 4, size - 4);
+    else
+        unique = filter->remove_rule (data + 4, size - 4);
+
+    if (unique)
+        return dist.send_to_all (msg_, flags_);
+    return 0;
 }
 
 bool zmq::xsub_t::xhas_out ()
@@ -197,25 +226,56 @@ bool zmq::xsub_t::xhas_in ()
 
 bool zmq::xsub_t::match (msg_t *msg_)
 {
-    return subscriptions.check ((unsigned char*) msg_->data (), msg_->size ());
+    for (filters_t::iterator it = filters.begin ();
+         it != filters.end (); ++it) {
+        if (it->second->match (
+                (const unsigned char *)msg_->data (), msg_->size ()))
+            return true;
+    }
+    return false;
 }
 
-void zmq::xsub_t::send_subscription (unsigned char *data_, size_t size_,
-    void *arg_)
+void zmq::xsub_t::send_subscription (
+    const unsigned char *data_, size_t size_, uint16_t method_id_, void *arg_)
 {
     pipe_t *pipe = (pipe_t*) arg_;
 
     //  Create the subsctription message.
     msg_t msg;
-    int rc = msg.init_size (size_ + 1);
+    int rc = msg.init_size (size_ + 4);
     zmq_assert (rc == 0);
     unsigned char *data = (unsigned char*) msg.data ();
-    data [0] = 1;
-    memcpy (data + 1, data_, size_);
+    //  Command ID, in network byte order
+    data [0] = 0;
+    data [1] = 1;
+    //  Method Id, in network byte order
+    data [2] = method_id_ >> 8;
+    data [3] = method_id_ & 0xFF;
+    memcpy (data + 4, data_, size_);
 
     //  Send it to the pipe.
     bool sent = pipe->write (&msg);
     zmq_assert (sent);
+}
+
+zmq::xsub_filter_t *zmq::xsub_t::create_filter (uint16_t method_id_)
+{
+    xsub_filter_t *ret = 0;
+    switch (method_id_) {
+    case ZMQ_FILTER_PREFIX:
+        ret = new (std::nothrow) xsub_prefix_filter_t ();
+        break;
+
+    case ZMQ_FILTER_EXACT:
+        ret = new (std::nothrow) xsub_exact_filter_t ();
+        break;
+
+    default:
+        ret = new (std::nothrow) xsub_default_filter_t (method_id_);
+    }
+
+    zmq_assert (ret);
+    return ret;
 }
 
 zmq::xsub_session_t::xsub_session_t (io_thread_t *io_thread_, bool connect_,

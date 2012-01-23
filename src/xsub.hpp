@@ -25,7 +25,6 @@
 #include "session_base.hpp"
 #include "dist.hpp"
 #include "fq.hpp"
-#include "trie.hpp"
 
 namespace zmq
 {
@@ -33,6 +32,7 @@ namespace zmq
     class ctx_t;
     class pipe_t;
     class io_thread_t;
+    class xsub_filter_t;
 
     class xsub_t :
         public socket_base_t
@@ -62,8 +62,11 @@ namespace zmq
 
         //  Function to be applied to the trie to send all the subsciptions
         //  upstream.
-        static void send_subscription (unsigned char *data_, size_t size_,
-            void *arg_);
+        static void send_subscription (
+            const unsigned char *data_, size_t size_,
+            uint16_t method_id_, void *arg_);
+
+        static xsub_filter_t *create_filter (uint16_t method_id_);
 
         //  Fair queueing object for inbound pipes.
         fq_t fq;
@@ -71,8 +74,8 @@ namespace zmq
         //  Object for distributing the subscriptions upstream.
         dist_t dist;
 
-        //  The repository of subscriptions.
-        trie_t subscriptions;
+        typedef std::map <uint16_t, xsub_filter_t *> filters_t;
+        filters_t filters;
 
         //  If true, 'message' contains a matching message to return on the
         //  next recv call.
